@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CH">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <title>玩具</title>
+</head>
+<link rel="stylesheet" href="../../static/bootstrap-3.3.7-dist/css/bootstrap.min.css">
+
+<body>
+
+
+<br>
+<div class="row" id="check_toy_key">
+    <div class="col-lg-4 col-md-4 col-sm-4">
+        <div class="input-group">
+            <input id='toy_id' type="text" class="form-control" placeholder="请输入玩具秘钥">
+            <span class="input-group-btn">
+        <button id="boot_up" class="btn btn-default" type="button">开机</button>
+      </span>
+        </div><!-- /input-group -->
+    </div><!-- /.col-lg-6 -->
+</div><!-- /.row -->
+<br>
+<div id="powered_on">
+</div>
+<br>
+
+<br>
+<a href="https://service.dcloud.net.cn/build/download/cc80f200-c361-11e9-bcd6-fb55333f86bd" type="button" class="btn btn-link">点我下载终端</a>
+
+<div id="Drop_down">
+</div>
+<br>
+<br>
+<div id="recorder">
+</div>
+
+
+</body>
+<script src="../../static/jquery-3.3.1.js" type="text/javascript" charset="utf-8"></script>
+<script src="../../static/bootstrap-3.3.7-dist/js/bootstrap.min.js" type="text/javascript" charset="utf-8"></script>
+<script src="../../static/recorder.js"></script>
+<script type="text/javascript">
+    var Client_ip = '127.0.0.1';
+    var toy_id = null;
+    var ws = null;
+    var id_nickname = [];
+    var id_chats = [];
+    // 接受消息
+    document.getElementById("boot_up").onclick = function () {
+        toy_id = document.getElementById('toy_id').value;
+        $.ajax({
+            url: "http://" + Client_ip + ":5050/toy_login",
+            type: "POST",
+            dataType: "json",
+            data: {"toy_id": toy_id},
+            success: function (data) {
+                if (data.code == 200) {
+                    // 登录成功 删除开机input以及提交按钮
+                    document.getElementById("check_toy_key").remove();
+                    // 创建好友下拉菜单
+                    create_Drop_down();
+                    // 创建音频对象
+                    play(true);
+                    // 创建好友列表
+                    get_friends();
+                    // 创建语音dom
+                    create_audio();
+                    // 设置开机音乐
+                    document.getElementById("audio").src = "http://" + Client_ip + ":5000/get_boot_prompt/" + data.code;
+                    // 验证成功后建立WebSocket连接
+                    create_ws()
+                } else {
+                    play(false);
+                    document.getElementById("audio").src = "http://" + Client_ip + ":5000/get_boot_prompt/" + data.code
+                }
+            },
+            error: function (XMLHttpRequest, textStatus, errorThrown) {
+                console.log("error");
+                console.log(XMLHttpRequest)
+            }
+        })
+    };
+
+    function create_ws() {
+        ws = new WebSocket("ws://" + Client_ip + ":5050/toy/" + toy_id);
+        ws.onmessage = function (data) {
+
+            // 监听事件
+            var new_data = JSON.parse(data.data);
+            console.log(JSON.stringify(new_data));
+            // 消息来自
+            document.getElementById("from").innerText = id_nickname[new_data.from_id];
+            document.getElementById("from").setAttribute("from_id", new_data.from_id);
+            document.getElementById("from").setAttribute("chat_id", id_chats[new_data.from_id]);
+            // 判断是否是语音消息 或者是发送的音频文件 voice_message
+
+            if (new_data.voice_message) {
+                // 如果是语音消息则直接返回语言提示
+                document.getElementById("audio").src = "http://" + Client_ip + ":5000/message_prompt/" + id_nickname[new_data.from_id];
+            } else {
+                //如果是点播的歌曲之类,先返回提示后紧接着播放音频
+                document.getElementById("audio").src = "http://" + Client_ip + ":5000/message_prompt_audio/" + id_nickname[new_data.from_id];
+                document.getElementById("audio").onended = function () {
+                    if (new_data) {
+                        // 只能播放一次
+                        document.getElementById("audio").src = new_data.play_path;
+                        new_data = null
+                    }
+                }
+            }
+        };
+        ws.onclose = function () {
+            // 如果出现断连则重新创建ws对象并绑定对应事件
+            create_ws()
+        }
+    }
+
+    // 创建播放器对象
+    function play(is_success) {
+        document.getElementById("powered_on").innerHTML = "";
+        var audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.controls = true;
+        audio.id = "audio";
+        document.getElementById("powered_on").appendChild(audio);
+        var br = document.createElement("br");
+        document.getElementById("powered_on").appendChild(br);
+        if (is_success) {
+            var span1 = document.createElement("span");
+            span1.className = "abel label-info";
+            span1.innerText = "消息来自:";
+            var span2 = document.createElement("span");
+            span2.id = "from";
+            span2.innerText = "小彬彬智能玩具助手";
+
+            // 接受消息button
+            var button1 = document.createElement('button');
+            button1.className = "btn btn-info";
+            button1.type = "button";
+            button1.innerText = "接受未读消息";
+            button1.onclick = get_unread_message;
+
+            document.getElementById("powered_on").appendChild(br);
+            document.getElementById("powered_on").appendChild(button1);
+            document.getElementById("powered_on").appendChild(br);
+            document.getElementById("powered_on").appendChild(span1);
+            document.getElementById("powered_on").appendChild(span2);
+
+        }
+
+    }
+
+    // 创建音频dom 并且绑定音频事件
+    function create_audio() {
+        var br = document.createElement("br");
+        var button1 = document.createElement("button");
+        button1.className = "btn btn-primary";
+        button1.type = "button";
+        button1.innerText = "开始录制";
+        button1.onclick = start_reco;
+
+        var button4 = document.createElement('button');
+        button4.className = "btn btn-primary";
+        button4.type = 'button';
+        button4.innerText = "消息回复";
+        button4.onclick = stop_reply_message;
+
+        var button2 = document.createElement("button");
+        button2.className = "btn btn-success";
+        button2.type = "button";
+        button2.innerText = "发送语音";
+        button2.onclick = stop_reco_audio;
+
+        var button3 = document.createElement("button");
+        button3.className = "btn btn-warning";
+        button3.type = 'button';
+        button3.innerText = "发送给彬彬智能助手";
+        button3.onclick = stop_reco_send_ai;
+
+
+        document.getElementById("recorder").appendChild(button1);
+        document.getElementById("recorder").appendChild(button4);
+        document.getElementById("recorder").appendChild(br);
+        document.getElementById("recorder").appendChild(button2);
+        document.getElementById("recorder").appendChild(button3);
+
+    }
+
+    // 发送消息
+    var reco = null;
+    var audio_context = new AudioContext();
+    navigator.getUserMedia = (navigator.getUserMedia ||
+        navigator.webkitGetUserMedia ||
+        navigator.mozGetUserMedia ||
+        navigator.msGetUserMedia);
+
+    navigator.getUserMedia({audio: true}, create_stream, function (err) {
+        console.log(err)
+    });
+
+    // 创建音频对象
+    function create_stream(user_media) {
+        var stream_input = audio_context.createMediaStreamSource(user_media);
+        reco = new Recorder(stream_input);
+    }
+
+    // 开始录音函数
+    function start_reco() {
+        reco.record();
+    }
+
+    // 停止录音并发送给用户
+    function stop_reco_audio() {
+        reco.stop();
+        send_audio("app");
+        reco.clear();
+    }
+
+    // 停止录音并回复消息
+    function stop_reply_message() {
+        reco.stop();
+        send_audio("reply");
+        reco.clear();
+    }
+
+    // 停止录音并发送给ai
+    function stop_reco_send_ai() {
+        reco.stop();
+        send_audio("ai");
+        reco.clear();
+    }
+
+    // 上传音频并根据 is_send_ai判断是否发送给用户
+    function send_audio(type) {
+        reco.exportWAV(function (wav_file) {
+            // 防止直接点击发送按钮 判断数据长度
+            if (wav_file.size > 44) {
+                var formdata = new FormData();
+                formdata.append("audio_file", wav_file, wav_file.name);
+                formdata.append("from_id", toy_id);
+                $.ajax({
+                    url: "http://" + Client_ip + ':5000/upload_file',
+                    type: "POST",
+                    processData: false,
+                    contentType: false,
+                    data: formdata,
+                    dataType: "json",
+                    success: function (data) {
+                        console.log(JSON.stringify(data));
+                        if (type == "app") {
+                            send_app(data)
+                        }
+                        if (type == "ai") {
+                            send_ai(data)
+                        }
+                        if (type == 'reply') {
+                            reply_app(data)
+                        }
+                    }
+                })
+            } else {
+                alert("请先点击录制按钮")
+            }
+        })
+    }
+
+    // 发送消息给app
+    function send_app(data) {
+        var app_id = document.getElementById("now_this").value;
+        data["from_id"] = toy_id;
+        data["voice_message"] = true;
+        delete data.code;
+        delete data.file_path;
+        if (app_id) {
+            // 判断用户是否选择发送好友
+            send_data = {
+                "app_id": app_id,
+                "chat": id_chats[app_id],
+                "data": data,
+                "from": toy_id
+            };
+            ws.send(JSON.stringify(send_data));
+            alert("发送成功");
+            console.log(send_data)
+        } else {
+            alert("请先选择发送消息的好友")
+        }
+    }
+
+    // 回复消息给app
+    function reply_app(data) {
+        var app_id = document.getElementById("from").getAttribute("from_id");
+        if (app_id) {
+            data["from_id"] = toy_id;
+            data["voice_message"] = true;
+            delete data.code;
+            delete data.file_path;
+            if (app_id) {
+                // 判断用户是否选择发送好友
+                send_data = {
+                    "app_id": app_id,
+                    "chat": id_chats[app_id],
+                    "data": data,
+                    "from": toy_id
+                };
+                ws.send(JSON.stringify(send_data));
+                alert("发送成功");
+                console.log(send_data)
+            } else {
+                alert("请先选择发送消息的好友")
+            }
+        } else {
+            alert("还没有人给您发消息哦")
+        }
+
+    }
+
+    // 发送消息给ai
+    function send_ai(data) {
+        data["from_id"] = toy_id;
+        delete data.code;
+        delete data.file_path;
+        $.ajax({
+            url: "http://" + Client_ip + ":5000/ai",
+            type: "POST",
+            dataType: "json",
+            data: data,
+            success: function (data) {
+                console.log(JSON.stringify(data));
+                console.log(data.file_name);
+                if (data.code == 200) {
+                    document.getElementById("audio").src = "http://" + Client_ip + ":5000/get_local_audio/" + JSON.parse(data.file_name);
+                    document.getElementById("from").innerText = data.from;
+                    alert("发送成功");
+
+                } else {
+                    console.log(data.error)
+                }
+            }
+        })
+    }
+
+    // 生成下拉菜单
+    function create_Drop_down() {
+        var div = document.createElement("div");
+        div.className = "btn-group";
+        var button1 = document.createElement("button");
+        button1.type = "button";
+        button1.className = "btn btn-danger";
+        button1.id = "now_this";
+        button1.value = "";
+        button1.innerText = "请选择需要发送消息的好友";
+
+        var button2 = document.createElement("button");
+        button2.type = "button";
+        button2.className = "btn btn-danger dropdown-toggle";
+        $(button2).attr("data-toggle", "dropdown");
+        $(button2).attr("aria-haspopup", true);
+        $(button2).attr("aria-expanded", false);
+
+        var span = document.createElement("span");
+        span.className = "caret";
+
+        var ul = document.createElement("ul");
+        ul.className = "dropdown-menu";
+        ul.id = "send_friend";
+
+        var li = document.createElement("li");
+
+        var a = document.createElement("a");
+
+        a.innerText = "请选择需要发送消息的好友";
+        a.onclick = change_this;
+
+        div.appendChild(button1);
+        div.appendChild(button2);
+        button2.appendChild(span);
+        div.appendChild(ul);
+        ul.appendChild(li);
+        li.appendChild(a);
+        document.getElementById("Drop_down").appendChild(div)
+
+    }
+
+    // 请求当前玩具好友信息 并遍历创建好友列表绑定事件
+    function get_friends() {
+        $.ajax({
+            url: "http://" + Client_ip + ":5000/get_friends",
+            type: "POST",
+            dataType: "json",
+            data: {"id": toy_id, 'type': "toy"},
+            success: function (data) {
+                for (var i = 0; i < data.friend_dict.length; i++) {
+                    create_menu(data.friend_dict[i])
+                }
+            }
+        })
+    }
+
+    // 创建下拉菜单li
+    function create_menu(data) {
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        id_nickname[data.friend_id] = data.friend_nickname;
+        id_chats[data.friend_id] = data.friend_chat;
+        a.text = data.friend_nickname;
+        a.value = data.friend_id;
+        a.onclick = change_this;
+        li.appendChild(a);
+        document.getElementById("send_friend").appendChild(li)
+    }
+
+    // 绑定好友事件
+    function change_this() {
+        var text = this.innerText;
+        var value = this.value;
+        console.log(text);
+        document.getElementById("now_this").innerText = text;
+        document.getElementById("now_this").value = value
+    }
+
+    // 获取离线消息
+    function get_unread_message() {
+        $.ajax({
+            url: "http://" + Client_ip + ":5000/get_unread_message/" + toy_id + '/' + document.getElementById('from').getAttribute("from_id"),
+            type: "get",
+            dataType: "json",
+            success: function (data) {
+                if (data.code == 200) {
+                    if (data.unread_message_list) {
+                        document.getElementById("audio").src = "http://" + Client_ip + ":5000/get_local_audio/" + data.unread_message_list.shift().file_name;
+                        document.getElementById("audio").onended = function () {
+                            if (data.unread_message_list.length == 0) {
+                                return
+                            }
+                            document.getElementById("audio").src = "http://" + Client_ip + ":5000/get_local_audio/" + data.unread_message_list.shift().file_name
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+
+
+</script>
+</html>

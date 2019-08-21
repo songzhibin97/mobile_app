@@ -1,0 +1,487 @@
+# _*_ coding:utf-8 _*_
+# 智能玩具
+# @Version : 1.0
+# @Time    :
+# @Author  : SongZhiBin
+
+============ 开发者日志 ===============
+
+App基本功能简介:
+        1.语言游戏
+        2.音频点播(儿歌,古诗,国学,自然,百科)
+        3.添加好友
+
+
+2019年07月20日:
+    汇总往日进度:
+        构建App代码框架(# HBuilder构建)
+            # 框架模型及其事件:
+                index.html:(# index主页默认id为 HBuilder)
+                    框架模型
+                        header
+                            标题栏(# 无返回框)
+                        body
+                            轮播图
+                            图文列表
+                            底部选项卡
+                    事件
+                        1.点击 底部选项卡 首页 跳转index页面
+                        2.点击 底部选项卡 我的 根据localStorage存储的nikname判断是否登录
+                            - nikname存在(# 已登录)则跳转至 user_home.html
+                            - nikname不存在(# 未登录)则跳转至 login.html 进行登录
+                        3.监听事件 go_home(# 由其他页面 通过fire进行触发) 返回index主页面
+
+                login.html:(# index触发事件未登录情况下进行跳转)
+                    框架模型
+                        header
+                            标题栏(# 有返回框)
+                        body
+                            input框(# 获取用户输入账户信息)
+                            choice按钮(# choice按钮用来选定是否进行自动登录事件)  -- 目前未启用
+                            button按钮 (# 用来向服务器提交用户输入的信息)
+                            a标签(# 注册用户以及忘记密码扩展连接) -- 目前未启用
+                    事件
+                         1.点击 登录 按钮后获取 input框中用户填写的信息并向 服务端指定接口进行POST请求提交数据,获得
+                         数据回执data后进行判断data.code状态码是否登录成功,登录成功则在localStorage写入nikname
+                         并且向index.html(# id=HBuilder)页面进行 go_home触发返回首页事件,如果登录未成功进行消息
+                         提示(# mui.toast)登录失败
+
+                user_home.html:(# index触发事件登录情况下进行跳转)
+                    框架模型
+                         header
+                             标题栏(# 有返回框)
+                         body
+                             字符串拼接(# 目前简单的字符串拼接获取localStorage的nikname值)
+                             button(# 退出按钮)
+                    事件
+                         1.点击退出按钮 清空localStorage中nikname值并返回index.html(# id=HBuilder)页面
+
+
+2019年07月21日
+    1.今日部署云端Mongodb服务端
+    2.将喜马拉雅音频ID(故事,儿歌)导入云端
+        # 已提前进行数据抓取 使用selenium进行自动抓取
+        # 自动抓取代码之前已构建
+            调用说明(# 构建在spider_audio中的 ximalaya.py中Ximalaya类中)
+                - get_store_list/get_nursery_rhyme_list 封装以下所有流程 返回url_list
+                - 调用save_audio_id 将url_list传入 内有专辑翻页进行数据爬取存放至mongodb中保存至stores(audio_id label)
+                    内部封装:
+                    - Ximalaya Class中首先应调用get_store_free/get_nursery_rhyme_free函数
+                    进行访问 https://www.ximalaya.com/ertong/并自动化选中儿歌/故事以及免费栏
+                    - 随后调用 data_processing 获取当前页面的html进行pyquery进行分析后 将专辑url存储至
+                    self.store_list_url中 以便于爬取具体内容
+                    - 随后调用 data_processing 进行当页数据保存(# 封装至next_page 翻页中 无需手动调用)
+                    - 调用 get_page 获取爬取专辑总页码
+                    - 调用 next_page 进行翻页
+
+
+
+2019年07月22日
+    1.在云服务器中下载已存MongoDB中stores中audio_id中执行distribution_get_audio.py中Get_audio类 下载并存储对应音频信息
+       # 调用说明(# 构建在distribution_get_audio.py中Get_audio类中)
+        - main('故事/儿歌') 封装一下所有流程
+            内部封装:
+            - 判断label是故事/儿歌改变self.path_name
+            - 调用 find_mongodb 传入label 获取mongodb对应label的audio_id
+            - 调用 get_audio_name 获取随机字符串已充当下载以及存储的audio_name
+            - 并发调用 requests_url 将获取到的audio_id传入进行http数据获取到的json数据提取并返回打包的数据data
+            - 内部再将data进行数据增加
+            - 调用 save_mongodb 判断传入 label_name 保存MongoDB不同数据库中
+            - 调用 download_audio/download_image 异步下载音频文件以及图片保存
+
+
+2019年07月23日
+    1.重构Flask结构 将其改为蓝图式(# mobile_app 运行main文件启动flask)
+        # 蓝图结构
+            mobile_app
+                - __init__.py  # 实例化app对象并将views.py中蓝图视图函数注册
+                - views.py  # 存放视图函数文件夹
+                    - login # 存放登录验证接口
+                    - API   # 存放app其他交互接口
+                - main.py   # flask启动入口
+
+    2.新建spider(# jiandanwnag.py) 每隔固定时间进行数据抓取存放至MongoDB
+        # jiandanwang.py结构
+            class Monitoring_jiandanwang
+            - main() # 流程函数 先调用 self.get_jiandan() 获取煎蛋网 html 在调用 self.analyze_html() 进行数据清洗 将数据打包并保存
+            # 以下函数已封装至main函数中
+                - get_jiandan(# 抓取煎蛋网首页返回html)
+                - analyze_html(# 分析html 进行数据打包 并调用self.save_mongodb进行数据保存)
+                - save_mongodb(# 存储至MongoDB中)
+    3.新增了 mobile_app/views/API.py 下增加了flask接口 http://..../m_list/<page> 访问接口返回MongoDB中Mobile_APP中
+M_list_info表最新插入数据
+
+
+
+
+
+2019年07月24日
+    1.新增了HBuilder中index.py 下拉刷新事件并且更改了图文列表动态(# 页面加载完成发送一次数据请求加载图文列表页面)向flask ../m_list接口请求数据
+并生成dom对象显示在页面
+    2.新增了HBuilder中index.py 上拉加载更事件
+    3.新增了spider(# photo_news.py) 每隔固定时间进行数据抓取存放至MongoDB
+        # photo_news.py结构
+                class Monitoring_jiandanwang
+                - main() # 流程函数 先调用 self.get_news() 获取图片新闻 html 在调用 self.analyze_html() 进行数据清洗 将数据打包并保存
+                # 以下函数已封装至main函数中
+                    - get_news (# 抓取图片新闻首页返回html)
+                    - analyze_html(# 分析html 进行数据打包 并调用self.save_mongodb进行数据保存)
+                    - save_mongodb(# 存储至MongoDB中)
+
+
+2019年07月25日
+    1.更改了HBuilder中index页面中布局(# 将其轮播图 图文列表等相关事件放入main.html中)
+    2.增加了HBuilder中index页面打开子页面 main.html及其事件
+    3.更改了HBuilder中服务端Ip配置(# mui.min.js中写入windows全局变量)
+    4.新增了 mobile_app/views/API.py 下新增了flask接口   http://..../photo_new 访问接口返回MongoDB中的Mobile_APP中
+Photo_noews表最新数据
+
+
+2019年07月26日
+    1.更改了HBuilder中所有UI图标模型
+    2.新增了HBilder中music.html页面 暂时用于 故事/儿歌图文列表栏
+        music.html结构
+            - 九宫格(# 用于搜索不同类型的音频)
+            - 图文列表(# 用于展示页面详情结构)
+
+
+        事件:
+            1.跟main.html类似 上拉刷新下拉加载更多
+            2.每个图文列表绑定点击事件 触发则打开playing.html 并将对应数据传入
+
+    3.新增了 mobile_app/views/API.py 下新增了flask接口   http://..../audios/<subject>/<page> 访问接口返回subject对应类型中的
+MongoDB中ximalaya subject_info最新数据
+
+
+2019年07月27日
+    1.新增 playing.html页面
+        playing.html结构
+            - 圆形播放音乐图片
+            - 音乐播放控件
+        事件
+            - 加载完mui 分别请求加载图片以及创建音频对象播放
+            - 控件暂停播放ul以及对应事件切换
+            - 控件停止播放ul以及事件的切换
+
+    2.新增flask接口 用于WebSocket通讯(# 新flask 5050端口)
+        - ip:5050/app/<app_id> # App端连接服务器的WebSocket接口
+            - 判断是否是WebSocket端连接,如果是WebSocket连接则将其加入至socket_dict(# {app_id:user_socket})
+            - 循环监听 如果收到消息解包 获取到 toy_id,data 用 toy_id 从socket_dict 获取到对应句柄,再用其句柄
+            - 使用send方法发送 data数据
+
+        - ip:5050/toy/<toy_id> # 玩具端连接服务器的WebSocket接口
+            - 判断是否是WebSocket端连接,如果是WebSocket连接则将其加入至socket_dict(# {app_id:user_socket})
+            - 循环监听 如果收到消息解包 获取到 app_id,data 用 app_id 从socket_dict 获取到对应句柄,再用其句柄
+            - 使用send方法发送 data数据
+
+        - ip:5050/toys/<toy_id> # Web玩具
+            - 访问返回 toy_audio.html
+                toy_audio.html结构
+                    - audio控件
+                toy_audio.html事件
+                    - 绑定WebSocket 访问toy接口监听
+                    - 收到消息进行数据json成obj类型 (# JSON.parse(data.data))
+                    - 在从解包的数据获取 play_path 更改至audio控件的src中
+
+    3.HBuilder中index.html新增事件
+        - mui.plusReady后启用WebSocket接口访问app接口
+        - 增加监听事件 send_toy_audio (# playing.html调用接口发送信息) 将其传送数据send_data.detail解包后 ws.send发送
+        - 增加WebSocket断连刷新页面事件 保证WebSocket连接成功
+
+    4.HBuilder中play.html新增 input控件 以及UI发送事件
+        - 点击 脚丫按钮 判断input控件是否为空 如果为空则提示不做其他操作 如果不为空则触发index.html send_toy_audio事件
+将input输入对应的玩具id以及创建此页面传递的data打包触发 send_toy_audio事件
+
+
+2019年07月27日
+    -- 音频播放已实现
+    -- 点播功能已实现
+
+2019年07月28日
+    1.修改了HBuilder中除 playing 其他标题栏不带返回键以及 mui.back = function(){} 替换
+    2.修改了HBuilder中 login.html触发index.html go_home事件 更改为go_user_info 跳转至user_home.html
+    3.新增了HBuilder中 login中注册事件 跳转至 register.html
+    4.更改了 WebSocket 需要在登录成功后才会建立连接
+    5.新增index.html中点击我的会进行用户校验 成功后连接WebSocket
+    6.新增 register.html页面 用于注册
+        - 结构
+            - 带返回键的标题栏
+            - input框
+            - 注册按钮
+        - 事件
+            - 点击注册按钮出发注册事件 收集input框中数据并对其校验 password 引用md5加密上传注册 注册成功返回登录界面
+    7.修改了 mobile_app 下 login返回的data (# code id nikname)
+    8.新增了两个flask接口
+        - ip:5000/register
+            - 用于处理用户注册并返回相对应的状态码以及error信息
+        - ip:5000/check_user
+            - 用于处理已登录用户状态是否有效并返回相应的状态码以及error信息
+
+
+2019年07月29日
+    1.新增了 HBuilder user_home.html 标题栏 新增按钮点击事件 跳转至 scanning.html 进行扫码
+    2.新增HBuilder 扫码页面 scanning.html
+        - 结构 一个div标签容器
+        - 事件
+            1.创建扫码空间并调用开始进行扫码
+            2.如果扫码是二维码则访问后端activation_toy接口进行数据分析 # mui.ajax post提交数据需要更改
+        headers: {'Content-Type':'application/x-www-form-urlencoded'}
+            3.得到回执函数,判断data.code状态判断并返回对应提示框
+    3.新增OR文件夹 OR.py中批量创建二维码并将图片保存至OR_image以id命名并将id保存至MongoDB中
+    4.新增flask接口
+        - ip:5000/check_key
+            - 判断是否有post提交or_key
+            - 如果提交数据不为空则进行校验是否存在MongoDB中设备id并且设备code为0(# 未激活)
+            - 如果满足条件返回对应code以及message 并将toy_id返回 否则返回对应错误code 以及error信息
+
+
+2019年07月30日
+    1.更改了index.html 连接WebSocket机制
+        - 未登录在登陆后跳转user_home的同时触发事件连接至WebSocket
+        - 已登录未点击我的进行校验 获取已存window.localStorage中id连接至WebSocket
+        - 已登录点击我的进行校验 校验成功后连接WebSocket
+    2.更正了bug 用户登陆后退出以及再次登录会遇到底部栏丢失 更改user_home.html页面 退出按钮事件 mui.open携带style
+    3.更改flask接口
+        - ip:5000/activation_toy
+        - 如果设备code=1 则玩具已被绑定 返回 code 202 toy_id 用于后续添加好友
+
+
+2019年07月31日
+    1.修改了HBuilder中user_home.html触发扫码事件 迁入至equipment.html
+    2.HBuilder中user_home.html新增li标签 我的设备 并绑定事件打开equipment.html
+    3.新增HBuilder页面equipment.html 用于展现绑定玩具列表 并第一行新增添加设备绑定事件点击打开sanning.html扫码,
+如果扫码成功 code=200 则打开create_toy.html页面
+    3.新增HBuilder页面create_toy.html,用于获取玩具具体信息并绑定生成自然逻辑与绑定着添加好友
+    4.create_toy.html获取创建新玩具具体信息,并且将扫描二维码的秘钥以及localStorage中存放的app_id
+获取传入后端create_toy接口
+    5.flask新增接口
+        - ip:5000/create_toy
+            - 获取创建玩具提交的基本信息并将其中user_id(# app_id)以及or_key提取出
+            - 用user_id获取 MongoDB中Mobile_APP中User_info用户信息
+            - 创建chats并获取chats_id
+            - 将其他创建玩具的信息打包为dict 并将 bind_user,avatar,or_key以及重要的friends包装至toy_info,
+        再将dict放入toy_info创建玩具
+                *** friends 关于自然逻辑
+                    1.用户扫码后创建玩具后绑定玩具,自动与app创建好友关系,且玩具的第一个好友一定是绑定者
+                    2.app与玩具创建好友关系,并不一定是第一个好友
+                    friends构建
+                        friend_id : user_id/or_key(# or_key作为玩具的唯一标识 也可以使用创建玩具后生成的id)
+                        friend_name : nickname(# user_info)/toy_name
+                        friend_nickname : nickname(# toy_info)/baby_name
+                        friend_avatar : app.jpg/toy.jpg
+                        friend_type : app/toy
+                        friend_chat : str(chats_id)
+            - 将user_info中对应信息加以封装 添加 bind_toy 以及friends
+            - 再将user_id条件更新user_info 内容
+
+
+2019年08月01日
+    1.新增 HBuilder中 equipment.html 事件
+        页面初始化后向后端请求好友数据并运行create_m_list函数将返回的结果转化为图文列表添加至equipment_list后
+    2.flask新增接口
+        - ip:5000/get_equipment
+            - 获取用户唯一标识进行判断如果存在拿到绑定toy的or_key进行转化为list 在toy_info中找到对应的玩具并将其打包返回
+
+
+
+
+2019年08月02日
+    1.flask新增接口
+        - ip:5000/get_friends
+            - 获取玩具或app唯一标识以及type进行判定不同结果返回 如果符合type并且唯一标识内容通过则将对于friends_dict返回至后端
+
+
+2019年08月03日
+    1.HBuilder index.html新绑定事件 点击好友 跳转至friends.html页面
+    2.新增HBuilder friends.html页面 页面加载完后向后端请求当前登录用户好友信息请求并拿到生成图文列表,且绑定点击事件
+跳转至chats.html页面
+    3.新增HBuilder chats.html页面 用于用户聊天 目前只绑定一个事件 页面加载后获取friends传输的数据 更改标题栏内容
+
+
+2019年08月04日
+    1.HBuilder中 chats.html 新增 按住说话 松开发送功能 绑定事件 按住创建录音对象 松开后结束录音 录音成功后上传至后端
+    2.flask新增接口
+        - ip:5000/upload_file
+            - 目前简易接口 只用于保存后端上传的音频文件
+
+
+2019年08月05日
+    1.优化了 flask接口
+        - ip:5000/upload_file
+            - 判断是否接收到文件 如果未接受则返回400并且对应error message
+            - 将获取到的文件f.filename进行切分 把后缀切除
+            - 拼接新的存储地点进行保存
+            - 将保存完的文件进行转码为mp3格式
+            - 如果未报错则将中间打包好的data返回,如果报错则返回对应的code以及error
+    2.更新了HBuilder中chats.html中录制音频结束后发送给对应玩具事件 触发index.html send_toy_audio向正在聊天对象推送音频请求
+    3.新增flask接口
+        - ip:5000/get_local_audio/<audio_id>
+            - 通过请求携带audio_id参数获取本地保存的音频返回二进制流 以便玩具进行播放
+
+
+2019年08月06日
+    1.HBuilder chats.html中 中引入chat.css样式 用于展示聊天内容
+    2.新建flask接口
+        - ip:5050/toy_login
+            - 通过携带 secret_key 验证玩具是否存在 并且是否激活返回对应状态码用作前端校验并播放不同的语音提示
+    3.修改了 玩具端 toy_audio.html WebSocket连接方式 并增加了开机功能(# 调用后端接口 toy_login 验证玩具可靠性)
+验证成功连接WebSocket并且播放不同的开机语音提示
+    4.修改了flask接口
+        - ip:5050/toys
+            - 修改了不需要访问携带玩具id
+
+
+
+2019年08月07日
+    1.新增了flask接口
+        - ip:5000/get_boot_prompt/<code>
+            - 通过携带的code来获取后台已存提示音频返回至玩具端播放
+    2.修改了 玩具端 toy_audio.html 开机音频播放
+    3.修改了HBuilder中playing.html向好友传输音乐模式 不用在手动输入玩具秘钥 改为点击 step 后向后端请求好友数据
+(# /get_friends) 循环展示出好友列表 点击好友列表向对应好友发送音频消息
+
+
+2019年08月08日
+    1.新增toy_audio.html中给app发送音频的功能(# 当前只写了上传音频)
+    2.修改了接口
+        -ip:5000/upload_file
+            - 修改了文件名命名是在api中重命名
+            - 删除了切割文件名操作
+
+2019年08月10日
+    1.修改了 toy_audio.html 展示模式
+        - 未登录只展示输入toy_id 并且开机
+        - 登录成功后输入开机dom 删除 添加audio框播放成功语音 并且获取当前id的好友展示出来
+        - 登录失败添加audio并播放对应语音
+
+
+2019年08月11日
+    1.修改了接口
+        - ip:5050/app/<app_id>
+        - ip:5050/toy/<toy_id>
+            - 增加了在 send_message中获取 chat 并且校验chat是否合法 找到对应将发送的message消息追加至
+MongoDB下chats表对应chat的historical后生成历史消息
+    2.HBuilder中chats.html 增加事件
+        - 加载此页面时向后端请求当前聊天历史消息 调用create_historical_dom()
+        - 设置监听事件 create_message 在index界面发送消息成功触发
+    3.HBuilder中index.html 增加事件
+        - 在 send_toy_audio事件中触发chats.html create_message事件
+
+    4.新增了flask接口
+        - ip:5000/get_chat_historical/<chat_id>
+            - 通过chat_id获取聊天历史
+    5.增加HBuilder中index.html中WebSocket onmessage触发事件 打包data触发chats.html中 create_message事件
+
+
+
+2019年08月14日
+    1.新增flask接口
+        - ip:5000/message_prompt/<nickname>
+            - 用于返回消息提示音
+        - ip:5000/message_prompt_audio/<nickname>
+            - 用于返回点播语言消息提示
+    2.新增flask接口
+        - ip:5000/get_unread_message/<to_id>/<from_id>
+            - 首先判断提交数据是否合法
+            - 将to_id在TOY_INFO中检索判断消息源
+            - 将to_id以及from_id检索至对应chat框,并获取其历史消息
+            - 根据消息源来区分非自己发送的消息内容放入列表中
+            - 在根据 to_id from_id找到未读数据量
+            - 再将列表切分后打包返回
+    3.修改了 toy_audio.html onmessage事件
+        - 如果收到的是app点播的音乐 则进行提示后播放
+        - 如果是app发送的语音消息则需要点击 接受消息按钮进行消息获取
+    4.增加了 toy_audio.html 点击获取音乐
+        - 先向后端请求数据 get_unread_message
+        - 将返回的列表循环 触发audio中的onended事件遍历播放列表音频
+
+2019年08月15日
+    1.在 toy_audio.html解决了 登陆成功后点击 发送语音/发送给ai助手 无录制情况下上传音频
+        - 在 function send_audio中
+             reco.exportWAV(function (wav_file){} 判断wav_file长度 >=44情况下上传至后端并获取数据 减少io操作
+
+    2.新增flask接口
+        - ip:5000/ai
+            - 首选判断提交数据是否合法
+            - 判断完毕进行音频路径拼接拿到音频的绝对地址 进行音频转码
+            - 将转完码的音频绝对地址拿到 使用百度接口转化为文本
+            - 将文本调用至图灵接口
+            - 将图灵返回的内容 再通过百度转化为音频返回
+
+
+2019年08月16日
+    1.在toy_audio.html新增了消息回复按钮以及对应事件 判断是否有消息发送至(# 必须是用户) 判断成功后向对应用户发送对应消息
+
+
+
+2019年08月17日
+    1.新增flask接口
+        - ip:5000/get_unread_message_num/<to_id>
+            - 用于app端显示未读消息数
+            - 判断to_id的有效性后遍历message库找到对应被发送消息进行遍历打包成列表
+        - ip:5000/empty_unread/<from_id>/<to_id>
+            - 用于清空未读消息计数 在app端访问对应chat框后将未读消息清空至0
+    2.在HBuilder中 index.html新增函数get_message_number 向后端请求对应的未读消息列表以及总未读数
+以及ul显示总未读数
+    3.在HBuilder中 index.html 触发friends点击跳转至friends.html传递unread_message_list(# 返回回来的未读数据列表)
+    4.在HBuilder中 friends.html中获取index.html参数并将其遍历 维护成from_friend_dict字典 用于循环好友列表时判断是否有未读消息
+    5.在HBuilder中index触发onmessage事件 用于接收到消息刷新index.html并触发friends.html refresh事件
+    6.在HBuilder中 friends.html监听 index.html触发的refresh事件 刷新friends.html页面
+#todo bug 如果用户在friends.html页面无法正确加载未读消息数据
+
+
+2019年08月18日
+    1.修改了接口
+        - ip:5000/create_toy
+            - 进行判断必须是app_id才能执行玩具的创建
+
+    2.修复了HBuilder中 index.html unread_message事件的一个判定条件 在unread_message_list[i]存在的情况下判定
+unread_message_list[i].from == from_id) 此bug导致friends.html看完消息后 index角标不能正常消失
+    3.修复了HBuilder中 scanning.html中 扫码判定条件 杜绝了玩具绑定玩具的bug 并且在202添加好友流程中加以判定 toy_id是否与扫码的text一致,
+如果一致则退出
+    4.新增flask接口
+        - ip:5000/get_toy_info
+            - 用于获取玩具详细信息
+            - 从后端获取toy_id 并解析 将对应的玩具数据返回
+
+        - ip:5000/get_or/<or_key>
+            - 获取二维码图片
+            - 从后端获取or_key并返回对应的二维码
+
+        - ip:5000/send_friend_request
+            - 用于发送好友请求
+            - 从后端获取 申请好友玩具id 以及被申请好友id 和请求信息 以及备注
+            - 判断是否已经请求过 如果未请求将对应数据打包存放至mongodb中并返回对应状态码
+
+        - ip:5000/get_friend_request
+            - 获取被请求加好友信息
+            - 从后端获取toy_id(# to_id) 在mongodb中获取所有申请加对应toy_id的信息并拿到请求者的基本信息打包返回
+
+    5.HBuilder中equipment.html页面新增 创建图文列表点击事件 触发跳转至toy_info.html界面
+    6.HBuilder新增 toy_info.html页面 用于展示玩具详情以及玩具通讯录信息
+        - 分别调用后端 get_toy_info / get_or
+        - 绑定 id friend_request 事件 跳转至 friend_request.html页面
+    7.HBuilder scanning.html新增添加好友事件 并触发 toy_info.html open_fiends事件
+    8.toy_info.html 监听 scanning 触发open_fiends事件 跳转至 add_friend.html
+    9.HBuilder 新增 add_friend.html页面 通过 scanning传递至toy_info数据并通过打开页面传递至add_friend.html数据以及 add_friend.html
+需要的数据 向后端发送 send_friend_request 好友申请请求
+
+
+2019年08月19日
+    1.HBuilder中friend_request.html中新增判定 如果request_list为空则增加一个空的图文列表 提高用户体验感
+    2.HBuilder中增加了dispose_request.html页面 用于用户处理好友请求
+        - 输入接受备注后 点击确认发送数据至后端执行添加好友
+        - 完成操作后跳转至equipment.html页面
+    3.新增flask接口
+        - ip:5000/get_friend_request
+            - 获取后端上传上来的一系列消息 并通过from_id toy_id获取对应的玩具详情
+            - 经过后台将对应玩具数据整理 并互相添加 更新玩具信息 并将chat互相添加or_key
+            - 以上成功后更新好友请求状态
+    4.修改了flask接口
+        - ip:5000/get_unread_message/<to_id>/<from_id>
+            - 新增 如果 to_id 和 from_id都为toy的or_key 则是玩具与玩具通讯
+            - 在聊天框查询不是当前玩具发送的消息 并从未读消息中筛选未读数取出
+
+2019年08月20日
+    1.修改了toy_audio.html和HBuilder.html index中ws断线重连机制
+        - 重新创建ws对象 并绑定onclose 以及 onmessage事件
